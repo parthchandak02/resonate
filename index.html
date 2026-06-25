@@ -6,223 +6,162 @@
   <title>Resonate — seismic rings</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: #2a1a10; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #2a1a10; -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none; }
     canvas { display: block; }
+
+    #controls {
+      position: fixed; bottom: 16px; right: 16px;
+      z-index: 10; display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+      font-family: serif; color: #c9b08a;
+    }
+    #ctrlToggle {
+      width: 36px; height: 36px; border-radius: 50%; border: 1px solid #8b7050;
+      background: #2a1a10; color: #c9b08a; font-size: 18px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; transition: background 0.2s;
+    }
+    #ctrlToggle:hover { background: #3a2a1a; }
+    #ctrlToggle.active { background: #c9b08a; color: #2a1a10; }
+
+    #ctrlPanel {
+      display: none; flex-direction: column; gap: 8px;
+      background: #2a1a10; border: 1px solid #8b7050; border-radius: 12px;
+      padding: 14px 16px; min-width: 240px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+    #ctrlPanel.open { display: flex; }
+
+    #dataBadge {
+      font-size: 10px; color: #a09070; text-align: center;
+      padding: 6px 8px; background: #352518; border-radius: 6px;
+      line-height: 1.4;
+    }
+    #dataBadge .val { font-weight: bold; color: #d4b88a; }
+    #dataBadge .src { font-size: 9px; color: #7a6a50; display: block; margin-top: 2px; }
+
+    .ctrl-row { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+    .ctrl-row label { width: 55px; text-align: right; white-space: nowrap; color: #a09070; }
+
+    .info-line {
+      font-size: 9px; color: #7a6a50; text-align: center;
+      padding: 6px 4px 0; line-height: 1.4; font-style: italic;
+      border-top: 1px solid #3a2a1a;
+    }
   </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+
+<div id="controls">
+  <div id="ctrlPanel">
+    <div id="dataBadge">Loading earthquake data...</div>
+    <div class="ctrl-row"><label style="width:auto;font-weight:bold">Tap anywhere</label><span style="color:#a09070">to create your own ring</span></div>
+    <div class="info-line">Each ring is a real USGS earthquake. Size = magnitude. Color = depth (warm = shallow, cool = deep). Rings expand like seismic waves.</div>
+  </div>
+  <button id="ctrlToggle">⚙</button>
+</div>
+
 <script>
-/* ponytail: zero dependencies. pure Canvas 2D API. works offline after first load. */
+const C = { maxRings:60, ringSpeed:1.2, ringFade:0.006, maxStroke:4.5, minStroke:0.3, shallowHue:25, deepHue:340, tremorAmp:0.3 };
+const BG='#2a1a10';
+const canvas=document.getElementById('c'), ctx=canvas.getContext('2d');
+let W,H;
+function resize(){W=canvas.width=window.innerWidth; H=canvas.height=window.innerHeight;}
+resize(); window.addEventListener('resize',resize);
+let rings=[], fc=0, touchGuard=false, earthquakes=[], dataLoaded=false, dataError=false;
 
-const C = {
-  maxRings: 60,
-  ringSpeed: 1.2,
-  ringFade: 0.006,
-  maxStroke: 4.5,
-  minStroke: 0.3,
-  // Earthy palette: shallow quakes = warm/orange; deep = cool brown/purple
-  shallowHue: 25,   // warm amber
-  deepHue: 340,     // cool umber
-  tremorAmp: 0.3,   // seismic tremor pixels
-};
+// ── Controls ──
+const ctrlToggle=document.getElementById('ctrlToggle');
+const ctrlPanel=document.getElementById('ctrlPanel');
+const dataBadge=document.getElementById('dataBadge');
+ctrlToggle.addEventListener('click',()=>{ctrlPanel.classList.toggle('open'); ctrlToggle.classList.toggle('active');});
 
-const BG = '#2a1a10';
-const canvas = document.getElementById('c');
-const ctx = canvas.getContext('2d');
-let W, H;
-function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
-resize();
-window.addEventListener('resize', resize);
-
-let rings = [];
-let fc = 0;
-let touchGuard = false;
-let earthquakes = [];
-let dataLoaded = false;
-let dataError = false;
-
-// ── Data loading: fetch USGS earthquakes ──
+// ── Data loading ──
 async function loadEarthquakes() {
   try {
     const resp = await fetch(
-      'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&minmagnitude=2.5&limit=20&orderby=magnitude&starttime=' +
-      new Date(Date.now() - 24*60*60*1000).toISOString().split('T')[0]
+      'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&minmagnitude=2.5&limit=30&orderby=magnitude&starttime=' +
+      new Date(Date.now()-24*60*60*1000).toISOString().split('T')[0]
     );
-    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    if (!resp.ok) throw new Error('API returned '+resp.status);
     const data = await resp.json();
     earthquakes = data.features || [];
     dataLoaded = true;
-
-    // Create rings from earthquake data
+    let maxMag = 0, deepest = 0;
     for (const eq of earthquakes) {
-      const props = eq.properties;
-      const coords = eq.geometry.coordinates;
-      const mag = props.mag || 1;
-      const depth = coords[2] || 10;
-      const lat = coords[1];
-      const lon = coords[0];
-      
-      // Map lat/lon to canvas position
-      const x = ((lon + 180) / 360) * W;
-      const y = ((90 - lat) / 180) * H;
-      
-      addRing(x, y, mag, depth, props.place || 'Unknown', props.time);
+      const p=eq.properties, c=eq.geometry.coordinates;
+      const mag=p.mag||1, depth=c[2]||10, lat=c[1], lon=c[0];
+      maxMag = Math.max(maxMag, mag);
+      deepest = Math.max(deepest, depth);
+      const x=((lon+180)/360)*W, y=((90-lat)/180)*H;
+      addRing(x,y,mag,depth,p.place||'Unknown');
     }
-  } catch (e) {
-    dataError = true;
-    dataLoaded = true;
-    // Fallback: generate some sample rings so it's not empty
-    addRing(W*0.5, H*0.4, 7.8, 57, 'Philippines', Date.now());
-    addRing(W*0.6, H*0.5, 7.5, 10, 'Venezuela', Date.now());
-    addRing(W*0.55, H*0.45, 7.2, 20, 'Venezuela', Date.now());
+    dataBadge.innerHTML = `<span class="val">${earthquakes.length} earthquakes</span> in last 24h, largest M${maxMag.toFixed(1)} <span class="src">USGS live feed, refreshes on reload</span>`;
+  } catch(e) {
+    dataError=true; dataLoaded=true;
+    dataBadge.innerHTML = `<span class="val">Sample data</span> offline mode <span class="src">Open with internet for live USGS quakes</span>`;
+    addRing(W*0.5,H*0.4,7.8,57,'Philippines');
+    addRing(W*0.65,H*0.48,7.5,10,'Venezuela');
+    addRing(W*0.55,H*0.44,7.2,20,'Venezuela');
+    addRing(W*0.4,H*0.55,6.8,35,'Japan');
+    addRing(W*0.7,H*0.6,6.5,80,'Indonesia');
   }
 }
 
-// ── Ring class ──
-class Ring {
-  constructor(x, y, mag, depth, place) {
-    this.x = x; this.y = y;
-    this.r = 0;
-    this.maxR = Math.sqrt(W*W + H*H);
-    this.mag = mag;
-    this.depth = depth;
-    this.place = place || 'Unknown';
-    // Color from depth: shallow = warm amber, deep = cool umber
-    const depthNorm = Math.min(depth / 100, 1);
-    this.hue = C.shallowHue + (C.deepHue - C.shallowHue) * depthNorm;
-    this.birthFc = fc;
-    // Size based on magnitude
-    this.speedMul = 0.5 + (mag / 10) * 1.5;
-    this.strokeMul = 0.3 + (mag / 10) * 0.7;
-    this.phase = Math.random() * Math.PI * 2;
+class Ring{
+  constructor(x,y,mag,depth,place){
+    this.x=x; this.y=y; this.r=0;
+    this.maxR=Math.sqrt(W*W+H*H); this.mag=mag; this.depth=depth; this.place=place||'Unknown';
+    const dn=Math.min(depth/100,1);
+    this.hue=C.shallowHue+(C.deepHue-C.shallowHue)*dn;
+    this.birthFc=fc; this.speedMul=0.5+(mag/10)*1.5;
+    this.strokeMul=0.3+(mag/10)*0.7; this.phase=Math.random()*Math.PI*2;
   }
-
-  get ageFrames() { return fc - this.birthFc; }
-  get alpha() {
-    return Math.max(0, 1 - this.r / this.maxR - C.ringFade * this.ageFrames);
-  }
-  get active() { return this.alpha > 0.01 && this.r < this.maxR; }
-
-  draw(tremorX, tremorY) {
-    const a = this.alpha;
-    if (a <= 0) return;
-
-    const w = C.minStroke + (this.r / this.maxR) * C.maxStroke * this.strokeMul;
-    const sat = 50 + 20 * (1 - this.r / this.maxR);
-    const lit = 40 + 25 * (1 - this.r / this.maxR);
-
-    // Earthy glow: warm shallow, cool deep
-    ctx.strokeStyle = `hsla(${this.hue}, ${sat}%, ${lit}%, ${a})`;
-    ctx.lineWidth = w;
-    ctx.beginPath();
-    ctx.arc(this.x + tremorX, this.y + tremorY, this.r, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // Inner echo ring
-    if (this.r > 20) {
-      ctx.strokeStyle = `hsla(${this.hue}, ${sat - 20}%, ${lit + 10}%, ${a * 0.12})`;
-      ctx.lineWidth = w * 0.35;
-      ctx.beginPath();
-      ctx.arc(this.x + tremorX, this.y + tremorY, this.r * 0.85, 0, Math.PI * 2);
-      ctx.stroke();
+  get ageFrames(){return fc-this.birthFc;}
+  get alpha(){return Math.max(0,1-this.r/this.maxR-C.ringFade*this.ageFrames);}
+  get active(){return this.alpha>0.01&&this.r<this.maxR;}
+  draw(tx,ty){
+    const a=this.alpha; if(a<=0)return;
+    const w=C.minStroke+(this.r/this.maxR)*C.maxStroke*this.strokeMul;
+    const sat=50+20*(1-this.r/this.maxR), lit=40+25*(1-this.r/this.maxR);
+    ctx.strokeStyle=`hsla(${this.hue},${sat}%,${lit}%,${a})`; ctx.lineWidth=w;
+    ctx.beginPath(); ctx.arc(this.x+tx,this.y+ty,this.r,0,Math.PI*2); ctx.stroke();
+    if(this.r>20){
+      ctx.strokeStyle=`hsla(${this.hue},${sat-20}%,${lit+10}%,${a*0.12})`; ctx.lineWidth=w*0.35;
+      ctx.beginPath(); ctx.arc(this.x+tx,this.y+ty,this.r*0.85,0,Math.PI*2); ctx.stroke();
     }
-
-    // Magnitude label near ring center (only when ring is small, before it grows too large)
-    if (this.r < 60 && this.r > 10 && a > 0.5) {
-      ctx.fillStyle = `hsla(35, 30%, 70%, ${a * 0.6})`;
-      ctx.font = '10px serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(`M${this.mag.toFixed(1)}`, this.x + tremorX, this.y + tremorY - this.r - 8);
+    if(this.r<60&&this.r>10&&a>0.5){
+      ctx.fillStyle=`hsla(35,30%,70%,${a*0.6})`; ctx.font='10px serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(`M${this.mag.toFixed(1)}`,this.x+tx,this.y+ty-this.r-8);
     }
   }
 }
 
-function addRing(x, y, mag, depth, place) {
-  if (rings.length >= C.maxRings) rings.shift();
-  rings.push(new Ring(x, y, mag, depth, place));
+function addRing(x,y,mag,depth,place){
+  if(rings.length>=C.maxRings)rings.shift();
+  rings.push(new Ring(x,y,mag,depth,place));
+}
+function tapRing(x,y){
+  addRing(x,y,2.5+Math.random()*5.5,5+Math.random()*95,'Tap event');
 }
 
-// ── Manual tap also generates rings with random magnitude ──
-function tapRing(x, y) {
-  const randMag = 2.5 + Math.random() * 5.5; // 2.5 to 8.0
-  const randDepth = 5 + Math.random() * 95;  // 5 to 100km
-  addRing(x, y, randMag, randDepth, 'Tap event');
-}
-
-// ── Draw ──
-function draw() {
+function draw(){
   fc++;
-
-  // Seismic tremor: subtle screen shake from earthquakes
-  let tremorX = 0, tremorY = 0;
-  if (rings.length > 0) {
-    // Gentle tremor that increases with number/largest ring
-    const tremor = Math.min(C.tremorAmp * Math.sin(fc * 0.05) * rings.length * 0.1, 2);
-    tremorX = (Math.random() - 0.5) * tremor;
-    tremorY = (Math.random() - 0.5) * tremor;
+  let tx=0,ty=0;
+  if(rings.length>0){const t=Math.min(C.tremorAmp*Math.sin(fc*0.05)*rings.length*0.1,2); tx=(Math.random()-0.5)*t; ty=(Math.random()-0.5)*t;}
+  ctx.fillStyle=BG; ctx.fillRect(0,0,W,H);
+  if(fc%10===0){ctx.fillStyle='rgba(60,40,25,0.03)'; for(let i=0;i<50;i++)ctx.fillRect(Math.random()*W,Math.random()*H,2+Math.random()*4,1+Math.random()*2);}
+  for(let i=rings.length-1;i>=0;i--){rings[i].r+=C.ringSpeed*rings[i].speedMul; rings[i].draw(tx,ty);}
+  for(let i=rings.length-1;i>=0;i--){if(!rings[i].active)rings.splice(i,1);}
+  if(rings.length===0&&dataLoaded){
+    ctx.fillStyle='rgba(180,150,120,0.4)'; ctx.font='14px serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('tap to resonate',W/2,H/2);
   }
-
-  // Background: warm earth with slight vibration
-  ctx.fillStyle = tremorX !== 0 || tremorY !== 0 ? '#2d1c12' : BG;
-  ctx.fillRect(0, 0, W, H);
-
-  // Subtle ground texture (static per pixel, drawn once every ~10 frames)
-  if (fc % 10 === 0) {
-    ctx.fillStyle = 'rgba(60, 40, 25, 0.03)';
-    for (let i = 0; i < 50; i++) {
-      ctx.fillRect(Math.random() * W, Math.random() * H, 2 + Math.random() * 4, 1 + Math.random() * 2);
-    }
-  }
-
-  // Draw rings with tremor offset
-  for (let i = rings.length - 1; i >= 0; i--) {
-    rings[i].r += C.ringSpeed * rings[i].speedMul;
-    rings[i].draw(tremorX, tremorY);
-  }
-
-  for (let i = rings.length - 1; i >= 0; i--) {
-    if (!rings[i].active) rings.splice(i, 1);
-  }
-
-  // Info overlay
-  if (dataLoaded) {
-    // Data source badge
-    ctx.fillStyle = 'rgba(180, 150, 120, 0.3)';
-    ctx.font = '10px serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText(dataError ? 'Using sample data' : 'USGS live earthquakes', 12, 12);
-    ctx.fillText(earthquakes.length + ' events loaded · tap for more', 12, 26);
-  }
-
-  if (rings.length === 0 && dataLoaded) {
-    ctx.fillStyle = 'rgba(180, 150, 120, 0.4)';
-    ctx.font = '14px serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('tap to resonate', W/2, H/2);
-  }
-
   requestAnimationFrame(draw);
 }
 
-// ── Interactions ──
-canvas.addEventListener('click', (e) => {
-  if (touchGuard) { touchGuard = false; return; }
-  tapRing(e.clientX, e.clientY);
-});
-canvas.addEventListener('touchstart', (e) => {
-  e.preventDefault();
-  touchGuard = true;
-  setTimeout(() => { touchGuard = false; }, 200);
-  const t = e.touches[0];
-  if (t) tapRing(t.clientX, t.clientY);
-}, { passive: false });
-canvas.addEventListener('touchend', (e) => e.preventDefault(), { passive: false });
+canvas.addEventListener('click',e=>{if(touchGuard){touchGuard=false;return;}if(e.target.closest('#controls'))return; tapRing(e.clientX,e.clientY);});
+canvas.addEventListener('touchstart',e=>{e.preventDefault(); touchGuard=true; setTimeout(()=>{touchGuard=false;},200); const t=e.touches[0]; if(t)tapRing(t.clientX,t.clientY);},{passive:false});
+canvas.addEventListener('touchend',e=>e.preventDefault(),{passive:false});
 
-// ── Start ──
 loadEarthquakes();
 draw();
 </script>
