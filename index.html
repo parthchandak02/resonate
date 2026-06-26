@@ -1,168 +1,179 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Resonate — seismic rings</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: #2a1a10; -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none; }
-    canvas { display: block; }
-
-    #controls {
-      position: fixed; bottom: 16px; right: 16px;
-      z-index: 10; display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
-      font-family: serif; color: #c9b08a;
-    }
-    #ctrlToggle {
-      width: 36px; height: 36px; border-radius: 50%; border: 1px solid #8b7050;
-      background: #2a1a10; color: #c9b08a; font-size: 18px; cursor: pointer;
-      display: flex; align-items: center; justify-content: center; transition: background 0.2s;
-    }
-    #ctrlToggle:hover { background: #3a2a1a; }
-    #ctrlToggle.active { background: #c9b08a; color: #2a1a10; }
-
-    #ctrlPanel {
-      display: none; flex-direction: column; gap: 8px;
-      background: #2a1a10; border: 1px solid #8b7050; border-radius: 12px;
-      padding: 14px 16px; min-width: 240px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-    }
-    #ctrlPanel.open { display: flex; }
-
-    #dataBadge {
-      font-size: 10px; color: #a09070; text-align: center;
-      padding: 6px 8px; background: #352518; border-radius: 6px;
-      line-height: 1.4;
-    }
-    #dataBadge .val { font-weight: bold; color: #d4b88a; }
-    #dataBadge .src { font-size: 9px; color: #7a6a50; display: block; margin-top: 2px; }
-
-    .ctrl-row { display: flex; align-items: center; gap: 8px; font-size: 11px; }
-    .ctrl-row label { width: 55px; text-align: right; white-space: nowrap; color: #a09070; }
-
-    .info-line {
-      font-size: 9px; color: #7a6a50; text-align: center;
-      padding: 6px 4px 0; line-height: 1.4; font-style: italic;
-      border-top: 1px solid #3a2a1a;
-    }
-  </style>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>Resonate — seismic rings</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#2a1a10;-webkit-tap-highlight-color:transparent;touch-action:manipulation;user-select:none}
+canvas{display:block}
+#controls{position:fixed;bottom:16px;right:16px;z-index:10;display:flex;flex-direction:column;align-items:flex-end;gap:8px;font-family:serif;color:#c9b08a}
+#ctrlToggle{width:36px;height:36px;border-radius:50%;border:1px solid #8b7050;background:#2a1a10;color:#c9b08a;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .2s}
+#ctrlToggle:hover{background:#3a2a1a}
+#ctrlToggle.active{background:#c9b08a;color:#2a1a10}
+#ctrlPanel{display:none;flex-direction:column;gap:8px;background:#2a1a10;border:1px solid #8b7050;border-radius:12px;padding:14px 16px;min-width:260px;box-shadow:0 4px 20px rgba(0,0,0,.4)}
+#ctrlPanel.open{display:flex}
+.mode-row{display:flex;gap:4px;margin-bottom:4px;background:#3a2a1a;border-radius:8px;padding:2px}
+.mode-btn{flex:1;text-align:center;padding:4px 8px;border-radius:6px;font-size:11px;cursor:pointer;border:none;background:transparent;color:#8b7050;transition:all .2s}
+.mode-btn.active{background:#c9b08a;color:#2a1a10}
+.mode-btn:not(.active):hover{background:#4a3a2a}
+#dataBadge{font-size:10px;color:#a09070;text-align:center;padding:6px 8px;background:#352518;border-radius:6px;line-height:1.4}
+#dataBadge .val{font-weight:bold;color:#d4b88a}
+#dataBadge .src{font-size:9px;color:#7a6a50;display:block;margin-top:2px}
+#dataBadge .sub{font-size:9px;color:#8b7a5a;display:block;margin-top:1px}
+.info-line{font-size:9px;color:#7a6a50;text-align:center;padding:6px 4px 0;line-height:1.4;font-style:italic;border-top:1px solid #3a2a1a}
+.ctrl-row{display:flex;align-items:center;gap:8px;font-size:11px}
+.ctrl-row label{width:55px;text-align:right;white-space:nowrap;color:#a09070}
+</style>
 </head>
 <body>
 <canvas id="c"></canvas>
-
 <div id="controls">
-  <div id="ctrlPanel">
-    <div id="dataBadge">Loading earthquake data...</div>
-    <div class="ctrl-row"><label style="width:auto;font-weight:bold">Tap anywhere</label><span style="color:#a09070">to create your own ring</span></div>
-    <div class="info-line">Each ring is a real USGS earthquake. Size = magnitude. Color = depth (warm = shallow, cool = deep). Rings expand like seismic waves.</div>
-  </div>
-  <button id="ctrlToggle">⚙</button>
+<div id="ctrlPanel">
+<div class="mode-row"><button class="mode-btn" id="modeTimeline">Timeline</button><button class="mode-btn active" id="modeTap">Tap</button></div>
+<div id="dataBadge">Loading earthquake data...</div>
+<div class="info-line" id="infoLine">Timeline: earthquakes sorted by time. Each ring persists. Tap: create rings, they expand and fade.</div>
 </div>
-
+<button id="ctrlToggle">⚙</button>
+</div>
 <script>
-const C = { maxRings:60, ringSpeed:1.2, ringFade:0.006, maxStroke:4.5, minStroke:0.3, shallowHue:25, deepHue:340, tremorAmp:0.3 };
+const C={maxRings:60,ringSpeed:1.2,ringFade:0.006,maxStroke:4.5,minStroke:0.3,shallowHue:25,deepHue:340,tremorAmp:0.3};
 const BG='#2a1a10';
-const canvas=document.getElementById('c'), ctx=canvas.getContext('2d');
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
 let W,H;
-function resize(){W=canvas.width=window.innerWidth; H=canvas.height=window.innerHeight;}
-resize(); window.addEventListener('resize',resize);
-let rings=[], fc=0, touchGuard=false, earthquakes=[], dataLoaded=false, dataError=false;
+function resize(){W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight;}
+resize();window.addEventListener('resize',resize);
+let mode='tap',rings=[],tapRings=[],fc=0,touchGuard=false;
+let earthquakes=[],dataLoaded=false,dataError=false;
+let tlIdx=0,tlTicks=0; // timeline state
 
-// ── Controls ──
-const ctrlToggle=document.getElementById('ctrlToggle');
-const ctrlPanel=document.getElementById('ctrlPanel');
-const dataBadge=document.getElementById('dataBadge');
-ctrlToggle.addEventListener('click',()=>{ctrlPanel.classList.toggle('open'); ctrlToggle.classList.toggle('active');});
+const ctrlToggle=document.getElementById('ctrlToggle'),ctrlPanel=document.getElementById('ctrlPanel');
+ctrlToggle.addEventListener('click',()=>{ctrlPanel.classList.toggle('open');ctrlToggle.classList.toggle('active');});
+const modeTimeline=document.getElementById('modeTimeline'),modeTap=document.getElementById('modeTap');
+modeTimeline.addEventListener('click',()=>{
+  mode='timeline';tlIdx=0;tlTicks=0;tapRings=[];rings=[];
+  modeTimeline.classList.add('active');modeTap.classList.remove('active');
+});
+modeTap.addEventListener('click',()=>{
+  mode='tap';tapRings=[];
+  modeTap.classList.add('active');modeTimeline.classList.remove('active');
+});
 
-// ── Data loading ──
-async function loadEarthquakes() {
-  try {
-    const resp = await fetch(
-      'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&minmagnitude=2.5&limit=30&orderby=magnitude&starttime=' +
-      new Date(Date.now()-24*60*60*1000).toISOString().split('T')[0]
-    );
-    if (!resp.ok) throw new Error('API returned '+resp.status);
-    const data = await resp.json();
-    earthquakes = data.features || [];
-    dataLoaded = true;
-    let maxMag = 0, deepest = 0;
-    for (const eq of earthquakes) {
-      const p=eq.properties, c=eq.geometry.coordinates;
-      const mag=p.mag||1, depth=c[2]||10, lat=c[1], lon=c[0];
-      maxMag = Math.max(maxMag, mag);
-      deepest = Math.max(deepest, depth);
-      const x=((lon+180)/360)*W, y=((90-lat)/180)*H;
-      addRing(x,y,mag,depth,p.place||'Unknown');
-    }
-    dataBadge.innerHTML = `<span class="val">${earthquakes.length} earthquakes</span> in last 24h, largest M${maxMag.toFixed(1)} <span class="src">USGS live feed, refreshes on reload</span>`;
-  } catch(e) {
-    dataError=true; dataLoaded=true;
-    dataBadge.innerHTML = `<span class="val">Sample data</span> offline mode <span class="src">Open with internet for live USGS quakes</span>`;
-    addRing(W*0.5,H*0.4,7.8,57,'Philippines');
-    addRing(W*0.65,H*0.48,7.5,10,'Venezuela');
-    addRing(W*0.55,H*0.44,7.2,20,'Venezuela');
-    addRing(W*0.4,H*0.55,6.8,35,'Japan');
-    addRing(W*0.7,H*0.6,6.5,80,'Indonesia');
+async function loadEarthquakes(){
+  const badge=document.getElementById('dataBadge');
+  try{
+    const resp=await fetch('https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&minmagnitude=2.5&limit=40&orderby=magnitude&starttime='+new Date(Date.now()-24*60*60*1000).toISOString().split('T')[0]);
+    if(!resp.ok)throw new Error('fail');
+    const data=await resp.json();
+    earthquakes=(data.features||[]).sort((a,b)=>a.properties.time-b.properties.time);
+    dataLoaded=true;
+    const maxMag=earthquakes.reduce((m,e)=>Math.max(m,e.properties.mag||0),0);
+    badge.innerHTML=`<span class="val">${earthquakes.length} earthquakes</span> loaded <span class="sub">Last 24h · M${maxMag.toFixed(1)} largest</span><span class="src">USGS live feed, refreshes on reload</span>`;
+    if(!earthquakes.length)loadSampleData();
+  }catch(e){
+    dataError=true;dataLoaded=true;loadSampleData();
+    document.getElementById('dataBadge').innerHTML='<span class="val">Sample data</span> offline mode<span class="src">Open with internet for live USGS quakes</span>';
   }
+}
+function loadSampleData(){
+  earthquakes=[{properties:{mag:7.8,time:Date.now()-3600000,place:'Philippines'},geometry:{coordinates:[125,5.6,57]}},{properties:{mag:7.5,time:Date.now()-7200000,place:'Venezuela'},geometry:{coordinates:[-68.5,10.4,10]}},{properties:{mag:7.2,time:Date.now()-10800000,place:'Venezuela'},geometry:{coordinates:[-68.5,10.4,20]}},{properties:{mag:6.8,time:Date.now()-14400000,place:'Japan'},geometry:{coordinates:[140,36,35]}},{properties:{mag:6.5,time:Date.now()-18000000,place:'Indonesia'},geometry:{coordinates:[120,-8,80]}},{properties:{mag:6.2,time:Date.now()-21600000,place:'Mexico'},geometry:{coordinates:[-100,18,15]}},{properties:{mag:5.9,time:Date.now()-25200000,place:'Alaska'},geometry:{coordinates:[-150,60,40]}},{properties:{mag:5.5,time:Date.now()-28800000,place:'Chile'},geometry:{coordinates:[-70,-30,60]}},{properties:{mag:5.2,time:Date.now()-32400000,place:'New Zealand'},geometry:{coordinates:[175,-40,25]}},{properties:{mag:4.8,time:Date.now()-36000000,place:'Iceland'},geometry:{coordinates:[-20,64,10]}}];
+}
+
+function addTimelineRing(eq){
+  if(rings.length>=C.maxRings)rings.shift();
+  const p=eq.properties,c=eq.geometry.coordinates;
+  const mag=p.mag||1,depth=c[2]||10,lat=c[1],lon=c[0];
+  const x=((lon+180)/360)*W,y=((90-lat)/180)*H;
+  const rng=new Ring(x,y,mag,depth,p.place||'Unknown',true);
+  rings.push(rng);
+}
+
+function addTapRing(x,y){
+  if(tapRings.length>=C.maxRings)tapRings.shift();
+  const rng=new Ring(x,y,2.5+Math.random()*5.5,5+Math.random()*95,'Tap event',false);
+  tapRings.push(rng);
 }
 
 class Ring{
-  constructor(x,y,mag,depth,place){
-    this.x=x; this.y=y; this.r=0;
-    this.maxR=Math.sqrt(W*W+H*H); this.mag=mag; this.depth=depth; this.place=place||'Unknown';
+  constructor(x,y,mag,depth,place,persist){
+    this.x=x;this.y=y;this.r=0;this.persist=persist;
+    this.maxR=Math.sqrt(W*W+H*H);this.mag=mag;this.depth=depth;this.place=place;
     const dn=Math.min(depth/100,1);
     this.hue=C.shallowHue+(C.deepHue-C.shallowHue)*dn;
-    this.birthFc=fc; this.speedMul=0.5+(mag/10)*1.5;
-    this.strokeMul=0.3+(mag/10)*0.7; this.phase=Math.random()*Math.PI*2;
+    this.birthFc=fc;this.speedMul=0.5+(mag/10)*1.5;
+    this.strokeMul=0.3+(mag/10)*0.7;this.phase=Math.random()*Math.PI*2;
   }
   get ageFrames(){return fc-this.birthFc;}
-  get alpha(){return Math.max(0,1-this.r/this.maxR-C.ringFade*this.ageFrames);}
+  get alpha(){
+    if(this.persist)return Math.max(0,1-this.r/this.maxR);
+    return Math.max(0,1-this.r/this.maxR-C.ringFade*this.ageFrames);
+  }
   get active(){return this.alpha>0.01&&this.r<this.maxR;}
   draw(tx,ty){
-    const a=this.alpha; if(a<=0)return;
+    const a=this.alpha;if(a<=0)return;
     const w=C.minStroke+(this.r/this.maxR)*C.maxStroke*this.strokeMul;
-    const sat=50+20*(1-this.r/this.maxR), lit=40+25*(1-this.r/this.maxR);
-    ctx.strokeStyle=`hsla(${this.hue},${sat}%,${lit}%,${a})`; ctx.lineWidth=w;
-    ctx.beginPath(); ctx.arc(this.x+tx,this.y+ty,this.r,0,Math.PI*2); ctx.stroke();
-    if(this.r>20){
-      ctx.strokeStyle=`hsla(${this.hue},${sat-20}%,${lit+10}%,${a*0.12})`; ctx.lineWidth=w*0.35;
-      ctx.beginPath(); ctx.arc(this.x+tx,this.y+ty,this.r*0.85,0,Math.PI*2); ctx.stroke();
-    }
-    if(this.r<60&&this.r>10&&a>0.5){
-      ctx.fillStyle=`hsla(35,30%,70%,${a*0.6})`; ctx.font='10px serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText(`M${this.mag.toFixed(1)}`,this.x+tx,this.y+ty-this.r-8);
-    }
+    const sat=50+20*(1-this.r/this.maxR),lit=40+25*(1-this.r/this.maxR);
+    ctx.strokeStyle=`hsla(${this.hue},${sat}%,${lit}%,${a*0.8})`;ctx.lineWidth=w;
+    ctx.beginPath();ctx.arc(this.x+tx,this.y+ty,this.r,0,Math.PI*2);ctx.stroke();
+    if(this.r>20){ctx.strokeStyle=`hsla(${this.hue},${sat-20}%,${lit+10}%,${a*0.1})`;ctx.lineWidth=w*0.35;ctx.beginPath();ctx.arc(this.x+tx,this.y+ty,this.r*0.85,0,Math.PI*2);ctx.stroke();}
+    if(this.r<60&&this.r>15&&a>0.4){ctx.fillStyle=`hsla(35,30%,70%,${a*0.5})`;ctx.font='9px serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(`M${this.mag.toFixed(1)}`,this.x+tx,this.y+ty-this.r-6);}
   }
-}
-
-function addRing(x,y,mag,depth,place){
-  if(rings.length>=C.maxRings)rings.shift();
-  rings.push(new Ring(x,y,mag,depth,place));
-}
-function tapRing(x,y){
-  addRing(x,y,2.5+Math.random()*5.5,5+Math.random()*95,'Tap event');
 }
 
 function draw(){
   fc++;
   let tx=0,ty=0;
-  if(rings.length>0){const t=Math.min(C.tremorAmp*Math.sin(fc*0.05)*rings.length*0.1,2); tx=(Math.random()-0.5)*t; ty=(Math.random()-0.5)*t;}
-  ctx.fillStyle=BG; ctx.fillRect(0,0,W,H);
-  if(fc%10===0){ctx.fillStyle='rgba(60,40,25,0.03)'; for(let i=0;i<50;i++)ctx.fillRect(Math.random()*W,Math.random()*H,2+Math.random()*4,1+Math.random()*2);}
-  for(let i=rings.length-1;i>=0;i--){rings[i].r+=C.ringSpeed*rings[i].speedMul; rings[i].draw(tx,ty);}
-  for(let i=rings.length-1;i>=0;i--){if(!rings[i].active)rings.splice(i,1);}
-  if(rings.length===0&&dataLoaded){
-    ctx.fillStyle='rgba(180,150,120,0.4)'; ctx.font='14px serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText('tap to resonate',W/2,H/2);
+  if((mode==='tap'?tapRings.length:rings.length)>0){const t=Math.min(C.tremorAmp*Math.sin(fc*0.05)*((mode==='tap'?tapRings.length:rings.length))*0.1,2);tx=(Math.random()-0.5)*t;ty=(Math.random()-0.5)*t;}
+  ctx.fillStyle=BG;ctx.fillRect(0,0,W,H);
+  if(fc%10===0){ctx.fillStyle='rgba(60,40,25,0.03)';for(let i=0;i<30;i++)ctx.fillRect(Math.random()*W,Math.random()*H,2+Math.random()*4,1+Math.random()*2);}
+
+  if(mode==='timeline'&&earthquakes.length>0){
+    tlTicks++;
+    if(tlTicks>180&&tlIdx<earthquakes.length-1){ // ~3s between quakes
+      tlTicks=0;tlIdx++;
+      addTimelineRing(earthquakes[tlIdx]);
+    }
+    // Expand all timeline rings
+    for(let i=rings.length-1;i>=0;i--){rings[i].r+=C.ringSpeed*rings[i].speedMul;rings[i].draw(tx,ty);}
+    for(let i=rings.length-1;i>=0;i--){if(!rings[i].active)rings.splice(i,1);}
+
+    // Top timeline bar
+    const total=earthquakes.length,bars=Math.min(tlIdx+1,total);
+    const barW=Math.min(W-40,400),bw=Math.max(3,(barW-(bars-1)*2)/bars);
+    const bx=(W-barW)/2,by=12,bh=6;
+    ctx.fillStyle='rgba(60,40,25,0.4)';ctx.roundRect(bx-2,by-2,barW+4,bh+4,4);ctx.fill();
+    for(let i=0;i<bars;i++){
+      const eq=earthquakes[i];const mag=eq.properties.mag||1;
+      const ratio=Math.min(mag/8,1);
+      const hue=C.shallowHue+(C.deepHue-C.shallowHue)*Math.min((eq.geometry.coordinates[2]||10)/100,1);
+      ctx.fillStyle=`hsla(${hue},60%,${40+ratio*30}%,0.9)`;
+      ctx.roundRect(bx+i*(bw+2),by,bw,bh,2);ctx.fill();
+    }
+
+    const cur=earthquakes[tlIdx];
+    if(cur){
+      const badge=document.getElementById('dataBadge');
+      badge.innerHTML=`<span class="val">${tlIdx+1}/${total}</span> M${cur.properties.mag.toFixed(1)} - ${cur.properties.place} <span class="sub">Timeline advancing · ${total} events over last 24h</span><span class="src">USGS live feed</span>`;
+    }
+  }else{
+    // Tap mode
+    for(let i=tapRings.length-1;i>=0;i--){tapRings[i].r+=C.ringSpeed*tapRings[i].speedMul;tapRings[i].draw(tx,ty);}
+    for(let i=tapRings.length-1;i>=0;i--){if(!tapRings[i].active)tapRings.splice(i,1);}
+  }
+
+  if(dataLoaded&&((mode==='tap'&&tapRings.length===0)||(mode==='timeline'&&rings.length===0&&tlIdx===0))){
+    ctx.fillStyle='rgba(180,150,120,0.4)';ctx.font='14px serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(mode==='timeline'?'timeline starting...':'tap to resonate',W/2,H/2);
   }
   requestAnimationFrame(draw);
 }
 
-canvas.addEventListener('click',e=>{if(touchGuard){touchGuard=false;return;}if(e.target.closest('#controls'))return; tapRing(e.clientX,e.clientY);});
-canvas.addEventListener('touchstart',e=>{e.preventDefault(); touchGuard=true; setTimeout(()=>{touchGuard=false;},200); const t=e.touches[0]; if(t)tapRing(t.clientX,t.clientY);},{passive:false});
+canvas.addEventListener('click',e=>{if(touchGuard){touchGuard=false;return;}if(e.target.closest('#controls'))return;if(mode==='tap')addTapRing(e.clientX,e.clientY);});
+canvas.addEventListener('touchstart',e=>{e.preventDefault();touchGuard=true;setTimeout(()=>{touchGuard=false;},200);const t=e.touches[0];if(t&&mode==='tap')addTapRing(t.clientX,t.clientY);},{passive:false});
 canvas.addEventListener('touchend',e=>e.preventDefault(),{passive:false});
 
 loadEarthquakes();
+addTapRing(W/2,H/2);
 draw();
 </script>
 </body>
