@@ -264,23 +264,21 @@ function scheduleFetch() {
 }
 
 // ─── Main loop ────────────────────────────────────────────────────────
+let spawnTimer = 0;
 function loop(time) {
   drawBackground();
-  drawGrid();
-  drawHorizonGlow();
+
+  // Continuously spawn random rings so canvas is never empty
+  spawnTimer++;
+  if (spawnTimer % 30 === 0) {
+    spawnRandom(2 + Math.random() * 6);
+  }
 
   // Clean dead rings
   rings = rings.filter(r => r.alive);
 
   // Draw rings
   for (const r of rings) r.draw();
-
-  // Show count info
-  ctx.save();
-  ctx.fillStyle = 'rgba(255,255,255,0.12)';
-  ctx.font = '11px "Courier New", monospace';
-  ctx.fillText('rings: ' + rings.length, 12, 24);
-  ctx.restore();
 
   requestAnimationFrame(loop);
 }
