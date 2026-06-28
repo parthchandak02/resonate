@@ -46,7 +46,7 @@ const C = {
   glow: '#ff00ff',
   text: 'rgba(255,255,255,0.6)',
   ringCount: 40,
-  fadeTime: 3000,
+  fadeTime: 4000,
   maxRings: 200,
   apiUrl: 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson',
 };
@@ -77,50 +77,61 @@ class Ripple {
     this.x = x;
     this.y = y;
     this.mag = Math.max(0.1, Math.min(9, mag || 1));
-    this.maxRadius = 20 + (this.mag / 9) * 280; // 20–300px
-    this.startOp = 0.25 + (this.mag / 9) * 0.55; // 0.25–0.80
+    this.maxRadius = 30 + (this.mag / 9) * 300; // 30–330px
+    this.startOp = 0.5 + (this.mag / 9) * 0.45; // 0.50–0.95 (much higher)
     this.born = performance.now();
-    this.strokeWidth = 1.5 + (this.mag / 9) * 5.5; // 1.5–7px
+    this.strokeWidth = 2 + (this.mag / 9) * 6; // 2–8px
     this.pulsePhase = Math.random() * Math.PI * 2;
     // hues: warm cycle through palette
     const t = Math.random();
-    if (t < 0.45) this.color = C.accent1; // magenta
-    else if (t < 0.8) this.color = C.accent2; // cyan
+    if (t < 0.4) this.color = C.accent1; // magenta
+    else if (t < 0.75) this.color = C.accent2; // cyan
     else this.color = C.accent3; // orange
   }
 
   get age() { return performance.now() - this.born; }
   get progress() { return Math.min(1, this.age / C.fadeTime); }
   get radius() { return this.progress * this.maxRadius; }
-  get opacity() { return this.startOp * (1 - this.progress) * (1 - this.progress); }
+  get opacity() { return this.startOp * (1 - this.progress); } // linear fade, more visible longer
   get alive() { return this.progress < 1; }
 
   draw() {
     if (!this.alive) return;
     const r = this.radius;
     const op = this.opacity;
-    if (op < 0.002 || r < 1) return;
+    if (op < 0.01 || r < 2) return;
 
     // Pulse: subtle radius modulation
-    const pulse = 1 + 0.04 * Math.sin(this.pulsePhase + this.progress * Math.PI * 6);
+    const pulse = 1 + 0.05 * Math.sin(this.pulsePhase + this.progress * Math.PI * 5);
 
     ctx.save();
     ctx.globalAlpha = op;
     ctx.strokeStyle = this.color;
     ctx.lineWidth = this.strokeWidth;
     ctx.shadowColor = this.color;
-    ctx.shadowBlur = 20;
+    ctx.shadowBlur = 30;
     ctx.beginPath();
     ctx.arc(this.x, this.y, r * pulse, 0, Math.PI * 2);
     ctx.stroke();
 
     // Second ring: thinner, wider glow ring
-    ctx.globalAlpha = op * 0.3;
-    ctx.lineWidth = this.strokeWidth * 0.5;
-    ctx.shadowBlur = 40;
+    ctx.globalAlpha = op * 0.4;
+    ctx.lineWidth = this.strokeWidth * 0.4;
+    ctx.shadowBlur = 50;
     ctx.beginPath();
-    ctx.arc(this.x, this.y, r * pulse * 1.08, 0, Math.PI * 2);
+    ctx.arc(this.x, this.y, r * pulse * 1.12, 0, Math.PI * 2);
     ctx.stroke();
+
+    // Center dot (bright flash point)
+    if (this.progress < 0.1) {
+      ctx.globalAlpha = op * (1 - this.progress * 10);
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowBlur = 40;
+      ctx.shadowColor = this.color;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 }
@@ -185,10 +196,18 @@ function drawBackground() {
   ctx.fillStyle = C.bg;
   ctx.fillRect(0, 0, W, H);
 
-  // Scanlines
-  ctx.fillStyle = 'rgba(255,255,255,0.035)';
-  for (let y = 0; y < H; y += 4) {
-    ctx.fillRect(0, y, W, 1);
+  // Subtle horizon glow
+  const grad = ctx.createRadialGradient(cx, H * 0.85, 0, cx, H * 0.85, H * 0.6);
+  grad.addColorStop(0, 'rgba(255,0,255,0.12)');
+  grad.addColorStop(0.5, 'rgba(0,255,255,0.05)');
+  grad.addColorStop(1, 'transparent');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Scanlines (subtle, only in lower portion)
+  ctx.fillStyle = 'rgba(255,255,255,0.03)';
+  for (let y = H * 0.4; y < H; y += 4) {
+    ctx.fillRect(0, Math.floor(y), W, 1);
   }
 }
 
@@ -225,15 +244,14 @@ function drawHorizonGlow() {
   ctx.fillRect(0, 0, W, H);
 }
 
-// ─── Warmup: spawn fake ripples so first frame isn't blank ────────────
+// ─── Warmup: spawn visible ripples so first frame isn't blank ────────
 function warmup() {
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 5; i++) {
     const x = 100 + Math.random() * (W - 200);
     const y = 100 + Math.random() * (H - 200);
-    const mag = 2 + Math.random() * 5;
+    const mag = 3 + Math.random() * 5;
     const r = new Ripple(x, y, mag);
-    // offset their birth times so they're at different stages
-    r.born -= i * 900;
+    r.born -= i * 800;
     rings.push(r);
   }
 }
