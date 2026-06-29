@@ -30,11 +30,24 @@ canvas {
   z-index:10;
   text-shadow:0 0 8px rgba(255,0,255,0.3);
 }
+#data-bar {
+  position:fixed;
+  bottom:50px;
+  left:0; right:0;
+  text-align:center;
+  color:rgba(255,255,255,0.6);
+  font-size:10px;
+  letter-spacing:2px;
+  pointer-events:none;
+  z-index:10;
+  font-family:system-ui,sans-serif;
+}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="desc">resonate · earthquake ripples · usgs feed</div>
+<div id="databar">USGS Earthquakes · loading...</div>
 <script>
 // ─── Config ───────────────────────────────────────────────────────────
 const C = {
@@ -72,11 +85,12 @@ canvas.addEventListener('touchmove',  e => e.preventDefault(), { passive: false 
 // ─── Ripple class ─────────────────────────────────────────────────────
 let nextId = 0;
 class Ripple {
-  constructor(x, y, mag) {
+  constructor(x, y, mag, locCode) {
     this.id = nextId++;
     this.x = x;
     this.y = y;
     this.mag = Math.max(0.1, Math.min(9, mag || 1));
+    this.locCode = locCode || '--';
     this.maxRadius = 30 + (this.mag / 9) * 300; // 30–330px
     this.startOp = 0.5 + (this.mag / 9) * 0.45; // 0.50–0.95 (much higher)
     this.born = performance.now();
@@ -114,6 +128,22 @@ class Ripple {
     ctx.arc(this.x, this.y, r * pulse, 0, Math.PI * 2);
     ctx.stroke();
 
+    // Label: magnitude + location
+    if (this.progress > 0.02 && this.progress < 0.85) {
+      const labelAlpha = op * (1 - this.progress * 1.2);
+      if (labelAlpha > 0.05) {
+        ctx.save();
+        ctx.globalAlpha = labelAlpha;
+        ctx.fillStyle = this.color;
+        ctx.font = '9px system-ui,sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        const label = 'M' + this.mag.toFixed(1) + ' ' + this.locCode;
+        ctx.fillText(label, this.x, this.y - r * pulse - 6);
+        ctx.restore();
+      }
+    }
+
     // Second ring: thinner, wider glow ring
     ctx.globalAlpha = op * 0.4;
     ctx.lineWidth = this.strokeWidth * 0.4;
@@ -139,16 +169,28 @@ class Ripple {
 // ─── Ripple manager ───────────────────────────────────────────────────
 let rings = [];
 let apiFailed = false;
+let lastFetchTime = 0;
 
-function spawnRipple(x, y, mag) {
-  rings.push(new Ripple(x, y, mag));
+// Extract a short location code from place string (last 2 chars or first 2 letters)
+function shortLoc(place) {
+  if (!place) return '--';
+  const p = place.trim();
+  // Try to get last word's first 2 letters (usually state code)
+  const parts = p.split(', ');
+  const last = parts[parts.length - 1] || p;
+  const code = last.replace(/[^A-Za-z]/g, '').substring(0, 2).toUpperCase();
+  return code || p.substring(0, 2).toUpperCase();
+}
+
+function spawnRipple(x, y, mag, locCode) {
+  rings.push(new Ripple(x, y, mag, locCode));
   if (rings.length > C.maxRings) rings.splice(0, rings.length - C.maxRings);
 }
 
 function spawnRandom(mag) {
   const x = 80 + Math.random() * (W - 160);
   const y = 80 + Math.random() * (H - 160);
-  spawnRipple(x, y, mag || 1 + Math.random() * 6);
+  spawnRipple(x, y, mag || 1 + Math.random() * 6, '--');
 }
 
 // ─── NOAA palette helper for colored ripples ──────────────────────────
@@ -173,14 +215,17 @@ async function fetchEarthquakes() {
     for (const f of features) {
       const coords = f.geometry.coordinates;
       const mag = f.properties.mag || 1;
+      const place = f.properties.place || '';
+      const locCode = shortLoc(place);
       const lng = coords[0];
       const lat = coords[1];
       // Map lat/lng to canvas position
       const x = ((lng + 180) / 360) * W;
       const y = ((90 - lat) / 180) * H;
-      spawnRipple(x, y, mag);
+      spawnRipple(x, y, mag, locCode);
     }
     apiFailed = false;
+    lastFetchTime = performance.now();
   } catch (e) {
     console.warn('API failed, using random ripples:', e.message);
     apiFailed = true;
@@ -250,7 +295,7 @@ function warmup() {
     const x = 100 + Math.random() * (W - 200);
     const y = 100 + Math.random() * (H - 200);
     const mag = 3 + Math.random() * 5;
-    const r = new Ripple(x, y, mag);
+    const r = new Ripple(x, y, mag, '--');
     r.born -= i * 800;
     rings.push(r);
   }
@@ -279,6 +324,19 @@ function loop(time) {
 
   // Draw rings
   for (const r of rings) r.draw();
+
+  // Update data bar
+  const dataEl = document.getElementById('data-bar');
+  if (dataEl) {
+    let updateText = '';
+    if (lastFetchTime > 0) {
+      const secs = Math.floor((performance.now() - lastFetchTime) / 1000);
+      updateText = secs < 60 ? secs + 's ago' : Math.floor(secs / 60) + 'm ago';
+    } else {
+      updateText = 'fetching...';
+    }
+    dataEl.textContent = 'USGS Earthquakes · ' + rings.length + ' rings · updated ' + updateText;
+  }
 
   requestAnimationFrame(loop);
 }
