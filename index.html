@@ -73,23 +73,29 @@ canvas.addEventListener('touchmove',  e => e.preventDefault(), { passive: false 
 
 // ─── Ripple class ─────────────────────────────────────────────────────
 let nextId = 0;
+let quakeMeta = { count: 0, title: 'USGS Earthquakes' };
+
 class Ripple {
-  constructor(x, y, mag, locCode) {
+  constructor(x, y, mag, locCode, place, depth, time) {
     this.id = nextId++;
     this.x = x;
     this.y = y;
     this.mag = Math.max(0.1, Math.min(9, mag || 1));
     this.locCode = locCode || '--';
+    this.place = place || '';
+    this.depth = depth || 0;
+    this.eventTime = time || 0;
     this.maxRadius = 30 + (this.mag / 9) * 300; // 30–330px
-    this.startOp = 0.5 + (this.mag / 9) * 0.45; // 0.50–0.95 (much higher)
+    this.startOp = 0.5 + (this.mag / 9) * 0.45; // 0.50–0.95
     this.born = performance.now();
     this.strokeWidth = 2 + (this.mag / 9) * 6; // 2–8px
     this.pulsePhase = Math.random() * Math.PI * 2;
-    // hues: warm cycle through palette
-    const t = Math.random();
-    if (t < 0.4) this.color = C.accent1; // magenta
-    else if (t < 0.75) this.color = C.accent2; // cyan
-    else this.color = C.accent3; // orange
+    // Color by magnitude depth
+    if (this.mag < 2) this.color = '#00ff88';     // green — micro
+    else if (this.mag < 4) this.color = C.accent2;  // cyan — light
+    else if (this.mag < 5) this.color = '#ffaa00';   // amber — moderate
+    else if (this.mag < 6) this.color = C.accent1;   // magenta — strong
+    else this.color = '#ff3355';                      // red — major
   }
 
   get age() { return performance.now() - this.born; }
@@ -117,18 +123,28 @@ class Ripple {
     ctx.arc(this.x, this.y, r * pulse, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Label: magnitude + location
-    if (this.progress > 0.02 && this.progress < 0.85) {
-      const labelAlpha = op * (1 - this.progress * 1.2);
+    // Label: magnitude + location + depth
+    if (this.progress > 0.02 && this.progress < 0.88) {
+      const labelAlpha = op * (1 - this.progress * 1.15);
       if (labelAlpha > 0.05) {
         ctx.save();
         ctx.globalAlpha = labelAlpha;
-        ctx.fillStyle = this.color;
-        ctx.font = '9px system-ui,sans-serif';
         ctx.textAlign = 'center';
+
+        // Magnitude (larger, glowing)
+        ctx.fillStyle = this.color;
+        ctx.font = 'bold 12px system-ui,sans-serif';
+        ctx.shadowColor = this.color;
+        ctx.shadowBlur = 20;
         ctx.textBaseline = 'bottom';
-        const label = 'M' + this.mag.toFixed(1) + ' ' + this.locCode;
-        ctx.fillText(label, this.x, this.y - r * pulse - 6);
+        ctx.fillText('M' + this.mag.toFixed(1), this.x, this.y - r * pulse - 8);
+
+        // Location + depth (smaller)
+        ctx.shadowBlur = 0;
+        ctx.font = '8px system-ui,sans-serif';
+        ctx.textBaseline = 'top';
+        const locDepth = this.locCode + (this.depth > 0 ? ' \u00B7 ' + Math.round(this.depth) + 'km' : '');
+        ctx.fillText(locDepth, this.x, this.y - r * pulse + 2);
         ctx.restore();
       }
     }
@@ -170,15 +186,15 @@ function shortLoc(place) {
   return code || p.substring(0, 2).toUpperCase();
 }
 
-function spawnRipple(x, y, mag, locCode) {
-  rings.push(new Ripple(x, y, mag, locCode));
+function spawnRipple(x, y, mag, locCode, place, depth, time) {
+  rings.push(new Ripple(x, y, mag, locCode, place, depth, time));
   if (rings.length > C.maxRings) rings.splice(0, rings.length - C.maxRings);
 }
 
 function spawnRandom(mag) {
   const x = 80 + Math.random() * (W - 160);
   const y = 80 + Math.random() * (H - 160);
-  spawnRipple(x, y, mag || 1 + Math.random() * 6, '--');
+  spawnRipple(x, y, mag || 1 + Math.random() * 6, '--', '', 0, 0);
 }
 
 // ─── NOAA palette helper for colored ripples ──────────────────────────
@@ -195,25 +211,30 @@ async function fetchEarthquakes() {
     const res = await fetch(C.apiUrl);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    if (!data || !data.features || !data.features.length) {
-      throw new Error('No features');
-    }
-    // Spawn ripples from recent quakes
-    const features = data.features.slice(0, 20);
-    for (const f of features) {
-      const coords = f.geometry.coordinates;
-      const mag = f.properties.mag || 1;
-      const place = f.properties.place || '';
-      const locCode = shortLoc(place);
-      const lng = coords[0];
-      const lat = coords[1];
-      // Map lat/lng to canvas position
-      const x = ((lng + 180) / 360) * W;
-      const y = ((90 - lat) / 180) * H;
-      spawnRipple(x, y, mag, locCode);
-    }
-    apiFailed = false;
-    lastFetchTime = performance.now();
+ if (!data || !data.features || !data.features.length) {
+   throw new Error('No features');
+ }
+ // Store metadata for data overlay
+ quakeMeta.count = data.metadata?.count || data.features.length;
+ quakeMeta.title = data.metadata?.title || 'USGS Real-time Earthquakes';
+ // Spawn ripples from recent quakes
+ const features = data.features.slice(0, 25);
+ for (const f of features) {
+   const coords = f.geometry.coordinates;
+   const mag = f.properties.mag || 1;
+   const place = f.properties.place || '';
+   const locCode = shortLoc(place);
+   const depth = coords[2] || 0;
+   const time = f.properties.time || Date.now();
+   const lng = coords[0];
+   const lat = coords[1];
+   // Map lat/lng to canvas position
+   const x = ((lng + 180) / 360) * W;
+   const y = ((90 - lat) / 180) * H;
+   spawnRipple(x, y, mag, locCode, place, depth, time);
+ }
+ apiFailed = false;
+ lastFetchTime = performance.now();
   } catch (e) {
     console.warn('API failed, using random ripples:', e.message);
     apiFailed = true;
@@ -334,7 +355,8 @@ function updateDataBar() {
   const now = performance.now();
   const ago = lastFetchTime ? Math.round((now - lastFetchTime) / 1000) + 's ago' : 'waiting...';
   const alive = rings.filter(r => r.alive).length;
-  el.textContent = `USGS Earthquakes · ${alive} rings · ${ago}`;
+  const maxMag = rings.reduce((m, r) => Math.max(m, r.alive ? r.mag : 0), 0);
+  el.textContent = `USGS Earthquakes · ${quakeMeta.count} events · ${alive} rings · Mmax ${maxMag.toFixed(1)} · ${ago}`;
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────
