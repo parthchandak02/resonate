@@ -50,6 +50,7 @@ const C = {
   ringCount: 40,
   fadeTime: 4000,
   maxRings: 200,
+  fetchInterval: 15000,
   apiUrl: 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson',
 };
 
@@ -73,11 +74,13 @@ canvas.addEventListener('touchmove',  e => e.preventDefault(), { passive: false 
 
 // ─── Ripple class ─────────────────────────────────────────────────────
 let nextId = 0;
-let quakeMeta = { count: 0, title: 'USGS Earthquakes' };
+let quakeMeta = { count: 0, title: 'USGS Earthquakes', maxMag: 0 };
+const seenQuakes = new Set(); // USGS event ids already drawn, so refetches only add new quakes
 
 class Ripple {
-  constructor(x, y, mag, locCode, place, depth, time) {
+  constructor(x, y, mag, locCode, place, depth, time, isQuake) {
     this.id = nextId++;
+    this.isQuake = !!isQuake; // false = decorative / clicked ring, not a real event
     this.x = x;
     this.y = y;
     this.mag = Math.max(0.1, Math.min(9, mag || 1));
@@ -96,6 +99,12 @@ class Ripple {
     else if (this.mag < 5) this.color = '#ffaa00';   // amber — moderate
     else if (this.mag < 6) this.color = C.accent1;   // magenta — strong
     else this.color = '#ff3355';                      // red — major
+    if (!this.isQuake) {
+      // Decorative rings: thin, dashed, pale and unlabelled so they never read as quakes
+      this.color = 'rgba(200,180,255,0.9)';
+      this.startOp *= 0.35;
+      this.strokeWidth = 1;
+    }
   }
 
   get age() { return performance.now() - this.born; }
@@ -118,10 +127,12 @@ class Ripple {
     ctx.strokeStyle = this.color;
     ctx.lineWidth = this.strokeWidth;
     ctx.shadowColor = this.color;
-    ctx.shadowBlur = 30;
+    ctx.shadowBlur = this.isQuake ? 30 : 0;
+    if (!this.isQuake) ctx.setLineDash([3, 6]);
     ctx.beginPath();
     ctx.arc(this.x, this.y, r * pulse, 0, Math.PI * 2);
     ctx.stroke();
+    if (!this.isQuake) { ctx.restore(); return; }
 
     // Label: magnitude + location + depth
     if (this.progress > 0.02 && this.progress < 0.88) {
@@ -186,8 +197,8 @@ function shortLoc(place) {
   return code || p.substring(0, 2).toUpperCase();
 }
 
-function spawnRipple(x, y, mag, locCode, place, depth, time) {
-  rings.push(new Ripple(x, y, mag, locCode, place, depth, time));
+function spawnRipple(x, y, mag, locCode, place, depth, time, isQuake) {
+  rings.push(new Ripple(x, y, mag, locCode, place, depth, time, isQuake));
   if (rings.length > C.maxRings) rings.splice(0, rings.length - C.maxRings);
 }
 
@@ -217,9 +228,13 @@ async function fetchEarthquakes() {
  // Store metadata for data overlay
  quakeMeta.count = data.metadata?.count || data.features.length;
  quakeMeta.title = data.metadata?.title || 'USGS Real-time Earthquakes';
- // Spawn ripples from recent quakes
- const features = data.features.slice(0, 25);
- for (const f of features) {
+ quakeMeta.maxMag = data.features.reduce((m, f) => Math.max(m, f.properties.mag || 0), 0);
+ // Spawn ripples only for quakes not drawn before (first load: the 25 most recent),
+ // staggered across the refetch interval so they don't all land at once
+ const fresh = data.features.filter(f => !seenQuakes.has(f.id));
+ data.features.forEach(f => seenQuakes.add(f.id));
+ const features = fresh.slice(0, 25);
+ features.forEach((f, i) => {
    const coords = f.geometry.coordinates;
    const mag = f.properties.mag || 1;
    const place = f.properties.place || '';
@@ -231,8 +246,9 @@ async function fetchEarthquakes() {
    // Map lat/lng to canvas position
    const x = ((lng + 180) / 360) * W;
    const y = ((90 - lat) / 180) * H;
-   spawnRipple(x, y, mag, locCode, place, depth, time);
- }
+   setTimeout(() => spawnRipple(x, y, mag, locCode, place, depth, time, true),
+     i * (C.fetchInterval / Math.max(features.length, 1)));
+ });
  apiFailed = false;
  lastFetchTime = performance.now();
   } catch (e) {
@@ -315,7 +331,7 @@ let fetchTimer = null;
 let lastFetchTime = 0;
 function scheduleFetch() {
   fetchEarthquakes();
-  fetchTimer = setInterval(fetchEarthquakes, 15000);
+  fetchTimer = setInterval(fetchEarthquakes, C.fetchInterval);
 }
 
 // ─── Main loop ────────────────────────────────────────────────────────
@@ -353,10 +369,13 @@ canvas.addEventListener('click', e => {
 function updateDataBar() {
   const el = document.getElementById('databar');
   const now = performance.now();
+  if (apiFailed && !lastFetchTime) {
+    el.textContent = 'USGS Earthquakes · feed unavailable · decorative rings only';
+    return;
+  }
   const ago = lastFetchTime ? Math.round((now - lastFetchTime) / 1000) + 's ago' : 'waiting...';
-  const alive = rings.filter(r => r.alive).length;
-  const maxMag = rings.reduce((m, r) => Math.max(m, r.alive ? r.mag : 0), 0);
-  el.textContent = `USGS Earthquakes · ${quakeMeta.count} events · ${alive} rings · Mmax ${maxMag.toFixed(1)} · ${ago}`;
+  const quakeRings = rings.filter(r => r.alive && r.isQuake).length;
+  el.textContent = `USGS Earthquakes · ${quakeMeta.count} events past hour · Mmax ${quakeMeta.maxMag.toFixed(1)} · ${quakeRings} on screen · ${ago}${apiFailed ? ' · refetch failed' : ''}`;
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────

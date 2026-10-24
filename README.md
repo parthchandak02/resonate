@@ -23,7 +23,7 @@
 
 <a href="https://parthchandak02.github.io/resonate/"><img src="docs/assets/readme/hero.jpg" width="100%" alt="Glowing red, amber, cyan and magenta rings of different sizes on a deep purple background with faint scanlines, each labelled with a magnitude such as M4.1 or M6.9, and a data bar reading USGS Earthquakes, 5 events, 11 rings, Mmax 7.7"></a>
 
-<sub>Live capture, 22 October 2026, after three clicks. Mixes real USGS events, decorative rings and clicked rings (see below).</sub>
+<sub>Live capture, 22 October 2026, after three clicks. Captured before decorative rings were restyled; they are now faint and dashed (see below).</sub>
 
 </div>
 
@@ -43,13 +43,15 @@ wider, thicker, brighter rings. It is a single HTML file with no libraries and n
 | Longitude, latitude | Position on an equirectangular map of the window |
 | Depth, place | A small label under the magnitude, such as `CA · 8km` |
 
-The feed is fetched again every 15 seconds and the first 25 events are re-spawned each time.
-A data bar shows the feed's event count, live rings, the largest magnitude on screen and
-the time since the last fetch.
+On load the 25 most recent events ripple out one after another over 15 seconds. The feed is
+fetched again every 15 seconds and only quakes not already shown are added. A data bar shows
+the feed's event count, the largest magnitude in the past hour, how many quake rings are on
+screen and the time since the last fetch.
 
-Not every ring is a real quake. To keep the canvas busy, a decorative ring with a random
-magnitude spawns at a random spot about twice a second, and five more open the page. If the
-feed fails, twelve random rings stand in. Click or tap anywhere to drop your own ring.
+To keep the canvas busy, faint dashed rings with no label also spawn at random spots about
+twice a second, and five more open the page. They are decoration, not quakes, and never count
+towards the data bar. If the feed fails, twelve dashed rings stand in and the bar says so.
+Click or tap anywhere to drop your own dashed ring.
 
 ## Run it
 
